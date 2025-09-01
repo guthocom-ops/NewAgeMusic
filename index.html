@@ -1,16 +1,168 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Teste de Áudio</title>
+    <title>Minha Rádio Web</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#111; color:#fff; margin:0; padding:20px; text-align:center; }
+        #playerContainer { display:inline-block; background:#222; padding:20px; border-radius:15px; box-shadow:0 0 20px #000; max-width:400px; width:90%; }
+        h2 { margin:0 0 10px 0; font-size:1.5em; }
+        #cover { width:100%; max-width:200px; height:200px; margin:10px auto; border-radius:10px; background:#333; background-size:cover; background-position:center; }
+        #trackTitle { margin-top:10px; font-weight:bold; font-size:1em; word-break:break-word; }
+        #progressContainer { width:90%; height:12px; background:#555; margin:10px auto; border-radius:6px; overflow:hidden; }
+        #progressBar { width:0%; height:100%; background:#4CAF50; transition:width 0.1s linear; }
+        #nextTrack { margin-top:5px; font-size:0.85em; color:#aaa; word-break:break-word; }
+        #controls button {
+            padding:10px 16px; font-size:1em; border:none; border-radius:10px;
+            background:#4CAF50; color:white; cursor:pointer; margin:10px 5px;
+        }
+        #controls button:hover { background:#45a049; }
+        
+        @media (max-width:500px){
+            #cover { height:150px; }
+            #trackTitle { font-size:0.9em; }
+            #controls button { padding:8px 14px; font-size:0.9em; }
+            #progressContainer { height:8px; }
+        }
+    </style>
 </head>
 <body>
 
-    <h1>Meu Teste de Áudio</h1>
+<h2>🎶 Minha Rádio Web</h2>
+<div id="playerContainer">
+    <div id="cover"></div>
+    <div id="trackTitle">Aguardando...</div>
+    <div id="progressContainer">
+        <div id="progressBar"></div>
+    </div>
+    <div id="nextTrack">Próxima: ...</div>
+    <div id="controls">
+        <button id="playBtn">▶️ Play</button>
+    </div>
+</div>
 
-    <audio controls>
-        <source src="Amethystium-Ethereal.mp3" type="audio/mpeg">
-        Seu navegador não suporta o elemento de áudio.
-    </audio>
+<script>
+    // ================= CONFIGURAÇÃO ===================
+    const playlistMusicas = [
+        "1audio128CBR.mp3"
+    ];
+    const playlistVinhetas = [
+        "2audio128CBR.mp3"
+    ];
+    const modoAleatorio = true;
+    const crossfadeTime = 8; // tempo em segundos
+    const tempoVinheta = 2; // de quantas em quantas músicas a vinheta toca
+    // ===================================================
 
+    const playBtn = document.getElementById('playBtn');
+    const trackTitle = document.getElementById('trackTitle');
+    const cover = document.getElementById('cover');
+    const progressBar = document.getElementById('progressBar');
+    const nextTrackDiv = document.getElementById('nextTrack');
+    
+    let audioContext;
+    let musicSource;
+    let vinhetaSource;
+    let musicGain;
+    let vinhetaGain;
+
+    let musicPlaying = false;
+    let currentPlaylist = "musicas";
+    let musicCount = 0;
+
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    if (modoAleatorio) {
+        shuffle(playlistMusicas);
+        shuffle(playlistVinhetas);
+    }
+
+    let musicIndex = 0;
+    let vinhetaIndex = 0;
+
+    async function loadAudioBuffer(url) {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        return audioContext.decodeAudioData(arrayBuffer);
+    }
+
+    async function playNextTrack() {
+        const url = (currentPlaylist === "musicas") ? playlistMusicas[musicIndex] : playlistVinhetas[vinhetaIndex];
+        const title = (currentPlaylist === "musicas") ? "Música" : "Vinheta";
+        
+        trackTitle.textContent = title;
+        nextTrackDiv.textContent = "Próxima: " + ((currentPlaylist === "musicas") ? "Vinheta" : "Música");
+        
+        const audioBuffer = await loadAudioBuffer(url);
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        
+        let currentGainNode = (currentPlaylist === "musicas") ? musicGain : vinhetaGain;
+        let nextGainNode = (currentPlaylist === "musicas") ? vinhetaGain : musicGain;
+        
+        source.connect(currentGainNode);
+        
+        currentGainNode.gain.setValueAtTime(1, audioContext.currentTime);
+        nextGainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        
+        source.start(0);
+
+        const trackDuration = audioBuffer.duration;
+        const now = audioContext.currentTime;
+
+        source.onended = () => {
+            currentPlaylist = (currentPlaylist === "musicas") ? "vinhetas" : "musicas";
+            if (currentPlaylist === "vinhetas") musicCount++;
+            if (musicCount >= tempoVinheta && currentPlaylist === "vinhetas") {
+                musicCount = 0;
+                vinhetaIndex = (vinhetaIndex + 1) % playlistVinhetas.length;
+            } else if (currentPlaylist === "musicas") {
+                musicIndex = (musicIndex + 1) % playlistMusicas.length;
+            }
+            playNextTrack();
+        };
+
+        setInterval(() => {
+            const progress = (audioContext.currentTime - now) / trackDuration;
+            progressBar.style.width = (progress * 100) + "%";
+        }, 100);
+
+        if (trackDuration > crossfadeTime) {
+            currentGainNode.gain.linearRampToValueAtTime(0, now + trackDuration - 2);
+            nextGainNode.gain.linearRampToValueAtTime(1, now + trackDuration - 2);
+        }
+    }
+
+    async function init() {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        musicGain = audioContext.createGain();
+        musicGain.connect(audioContext.destination);
+
+        vinhetaGain = audioContext.createGain();
+        vinhetaGain.connect(audioContext.destination);
+    }
+    
+    playBtn.addEventListener('click', async () => {
+        if (!musicPlaying) {
+            if (!audioContext) {
+                await init();
+            }
+            playNextTrack();
+            playBtn.textContent = '⏸️ Pause';
+            musicPlaying = true;
+        } else {
+            audioContext.suspend();
+            playBtn.textContent = '▶️ Play';
+            musicPlaying = false;
+        }
+    });
+
+</script>
 </body>
 </html>
